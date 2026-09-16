@@ -1,0 +1,47 @@
+# Build directories
+build/
+Build/
+build-*/
+cmake-build-*/
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+install_manifest.txt
+compile_commands.json
+_deps/
+
+# Compiled objects, libraries, executables
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+
+# Debug info
+*.pdb
+*.dwo
+
+# Simulator run output
+simulation.json
+
+# Temporary files
+*.tmp
+*.log
+*.bak
+*.swp
+.cache/
+
+# ESP-IDF firmware build artifacts
+firmware/build/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/managed_components/
+firmware/dependencies.lock
