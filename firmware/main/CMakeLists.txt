@@ -14,6 +14,8 @@ file(MAKE_DIRECTORY "${GENERATED_DIR}")
 idf_component_register(
     SRCS
         "main.cpp"
+        "sensor_uart.cpp"
+        "publisher.cpp"
     INCLUDE_DIRS
         "."
         "${GENERATED_DIR}"
