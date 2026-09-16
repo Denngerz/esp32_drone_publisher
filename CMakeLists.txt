@@ -38,3 +38,10 @@ target_link_libraries(droneBallistics_Thread PUBLIC Threads::Threads)
 
 add_executable(droneBallistics_Thread_mt src/main_mt.cpp)
 target_link_libraries(droneBallistics_Thread_mt PRIVATE droneBallistics_Thread)
+# --- tests ---------------------------------------------------------------
+# The sensor link is the seam between the ESP32 and the Pi, so its framing is
+# worth testing on the host where failures are cheap to find. The header is
+# standalone, so this needs neither the simulator library nor a board.
+add_executable(sensorLinkTest tests/SensorLinkTest.cpp)
+target_include_directories(sensorLinkTest PRIVATE include)
+add_test(NAME sensor_link COMMAND sensorLinkTest)
