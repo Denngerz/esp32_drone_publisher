@@ -27,6 +27,7 @@ add_library(droneBallistics_Thread
     src/states/States.cpp
     src/mt/DronePhysics.cpp
     src/mt/ThreadSafeTargetProvider.cpp
+    src/mt/SerialTargetSource.cpp
     src/mt/DroneStates.cpp
     src/mt/MissionRunner.cpp
 )
