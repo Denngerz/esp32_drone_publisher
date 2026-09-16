@@ -8,7 +8,7 @@ MissionRunner::MissionRunner(const DroneConfig& cfg,
                              const AmmoParams& ammo,
                              std::unique_ptr<IBallisticSolver> solver,
                              DronePhysics* physics,
-                             ThreadSafeTargetProvider* targets)
+                             ITargetSource* targets)
     : cfg_(cfg)
     , ammo_(ammo)
     , solver_(std::move(solver))

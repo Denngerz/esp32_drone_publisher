@@ -2,6 +2,7 @@
 #include "../include/interfaces/IBallisticSolver.hpp"
 #include "../include/interfaces/IConfigLoader.hpp"
 #include "../include/mt/DronePhysics.hpp"
+#include "../include/interfaces/ITargetSource.hpp"
 #include "../include/mt/ThreadSafeTargetProvider.hpp"
 #include "../include/mt/MissionRunner.hpp"
 #include <chrono>
@@ -30,6 +31,11 @@ int main(int argc, char** argv)
     auto solver = fabric.createSolver(solverType);
 
     // Three independently owned components, each with its own thread.
+    //
+    // Targets are reached through ITargetSource from here on. The concrete
+    // type is chosen once, in this block, and nothing downstream knows which
+    // one it got — that is what lets a seeker on the serial link stand in for
+    // the local trajectory file.
     auto provider = std::make_unique<ThreadSafeTargetProvider>(
         cfg.arrayTimeStep, cfg.targetTimeStep, cfg.timeScale);
     if (!provider->loadFromFile("data/targets.json"))
@@ -37,33 +43,34 @@ int main(int argc, char** argv)
         std::cerr << "Failed to load targets\n";
         return 1;
     }
+    ITargetSource* source = provider.get();
 
     auto physics = std::make_unique<DronePhysics>(cfg, cfg.startPos, cfg.initialDir);
 
     MissionRunner mission(cfg, ammo, std::move(solver),
-                          physics.get(), provider.get());
+                          physics.get(), source);
 
-    std::thread providerThread(&ThreadSafeTargetProvider::run, provider.get());
+    std::thread providerThread(&ITargetSource::run, source);
     std::thread physicsThread(&DronePhysics::run, physics.get());
     std::thread missionThread(&MissionRunner::run, &mission);
 
     // Wait until every thread is up before releasing them, so the simulation
     // starts synchronised.
-    while (!provider->isThreadReady() ||
+    while (!source->isThreadReady() ||
            !physics->isThreadReady()  ||
            !mission.isThreadReady())
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
-    provider->start();
+    source->start();
     physics->start();
     mission.start();
 
     missionThread.join();   // the mission is the only thread main waits on
 
     physics->stop();        // flag + join for the worker threads
-    provider->stop();
+    source->stop();
     providerThread.join();
     physicsThread.join();
 

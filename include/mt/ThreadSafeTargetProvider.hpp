@@ -5,10 +5,11 @@
 #include <vector>
 #include "../dto/Coord.hpp"
 #include "../dto/Target.hpp"
+#include "../interfaces/ITargetSource.hpp"
 
 // Moves targets along their (private) trajectories on its own thread and
 // publishes only current position + velocity snapshots under a mutex.
-class ThreadSafeTargetProvider
+class ThreadSafeTargetProvider : public ITargetSource
 {
 public:
     explicit ThreadSafeTargetProvider(float arrayTimeStep = 1.0f,
@@ -18,15 +19,15 @@ public:
     bool loadFromFile(const char* path);
 
     // Thread lifecycle.
-    void run();              // thread body
-    bool isThreadReady() const { return ready_.load(); }
-    void start();            // begin moving the targets
-    void stop();             // signal stop (owner joins the thread)
+    void run() override;              // thread body
+    bool isThreadReady() const override { return ready_.load(); }
+    void start() override;            // begin moving the targets
+    void stop() override;             // signal stop (owner joins the thread)
     bool running() const { return running_.load(); }
 
     // Snapshots (copy under mutex, no references to internal data).
-    int    getTargetCount() const;
-    Target getTarget(int index) const;
+    int    getTargetCount() const override;
+    Target getTarget(int index) const override;
 
 private:
     void   advance(float simTime);  // recompute snapshots for a given sim time

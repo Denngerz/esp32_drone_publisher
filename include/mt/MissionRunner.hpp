@@ -9,7 +9,7 @@
 #include "../dto/AmmoParams.hpp"
 #include "../dto/Coord.hpp"
 #include "DronePhysics.hpp"
-#include "ThreadSafeTargetProvider.hpp"
+#include "../interfaces/ITargetSource.hpp"
 #include "DroneStates.hpp"
 
 // Runs the mission logic on its own thread: chooses the target, computes the
@@ -23,7 +23,7 @@ public:
                   const AmmoParams& ammo,
                   std::unique_ptr<IBallisticSolver> solver,
                   DronePhysics* physics,
-                  ThreadSafeTargetProvider* targets);
+                  ITargetSource* targets);
 
     void run();              // thread body
     bool isThreadReady() const { return ready_.load(); }
@@ -51,7 +51,7 @@ private:
     AmmoParams  ammo_;
     std::unique_ptr<IBallisticSolver> solver_;
     DronePhysics*             physics_;
-    ThreadSafeTargetProvider* targets_;
+    ITargetSource*            targets_;
 
     std::unique_ptr<IMtState> state_;
     MtContext                 ctx_;
