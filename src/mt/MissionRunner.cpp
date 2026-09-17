@@ -89,6 +89,17 @@ void MissionRunner::run()
     {
         if (started_.load())
         {
+            // A source that has gone silent can no longer say where anything
+            // is. Continuing would fly the drone at the last position it
+            // happened to hear, which is worse than stopping: the aircraft
+            // keeps manoeuvring and releasing on stale information.
+            if (!targets_->healthy())
+            {
+                std::cerr << "Target source went silent, aborting mission\n";
+                aborted_.store(true);
+                break;
+            }
+
             planAndCommand();
             if (++steps >= MAX_STEPS) break;
         }

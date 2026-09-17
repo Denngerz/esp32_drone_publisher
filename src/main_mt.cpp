@@ -124,6 +124,14 @@ int main(int argc, char** argv)
     if (!mission.writeLog("simulation.json"))
         std::cerr << "Failed to write simulation.json\n";
 
+    // The log is written either way: a run that lost the link partway is
+    // still worth inspecting. Only the exit status distinguishes them.
+    if (mission.aborted())
+    {
+        std::cerr << "Mission aborted -> simulation.json holds the partial run\n";
+        return 1;
+    }
+
     std::cout << "Mission complete -> simulation.json\n";
     return 0;
 }

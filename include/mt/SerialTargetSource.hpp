@@ -16,6 +16,7 @@
 // same mutex, so nothing hands out a reference into moving state.
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -29,6 +30,19 @@
 class SerialTargetSource : public ITargetSource
 {
 public:
+    using Clock = std::chrono::steady_clock;
+
+    // Detections arrive every 50 ms per track at the firmware's default rate,
+    // so half a second is ten missed rounds: long enough not to trip on
+    // scheduling jitter, short enough that a lost track is noticed within one
+    // manoeuvre.
+    static constexpr auto kTrackStaleAfter = std::chrono::milliseconds(500);
+
+    // The bay and the seeker status repeat once a second, so a second of
+    // total silence means nothing is arriving at all, not merely that one
+    // track was dropped.
+    static constexpr auto kLinkDeadAfter = std::chrono::milliseconds(1500);
+
     explicit SerialTargetSource(std::string device, int baud = 115200);
     ~SerialTargetSource() override;
 
@@ -50,7 +64,16 @@ public:
 
     // --- ITargetSource ---
     int    getTargetCount() const override;
+
+    // A track nobody has confirmed for kTrackStaleAfter is returned at its
+    // last known position with zero velocity. Extrapolating a stale
+    // observation forward invents a target that was never seen there.
     Target getTarget(int index) const override;
+
+    // False once nothing at all has arrived for kLinkDeadAfter. Reported
+    // rather than acted on here: what a mission does about a dead link is
+    // the mission's decision.
+    bool   healthy() const override;
     void   run() override;
     bool   isThreadReady() const override { return ready_.load(); }
     void   start() override;
@@ -68,7 +91,15 @@ private:
     {
         Coord    pos{ 0.0f, 0.0f };
         Coord    velocity{ 0.0f, 0.0f };
+
+        // The seeker's own clock, used for differencing into a velocity.
         uint32_t lastSeenMs = 0;
+
+        // Local arrival time, used only to judge staleness. The two cannot be
+        // compared with each other and answer different questions: how fast
+        // the target was moving, and whether anyone has looked lately.
+        Clock::time_point lastArrival{};
+
         bool     seen       = false;
     };
 
@@ -82,6 +113,11 @@ private:
     AmmoParams         ammo_{};
     float              hitRadius_ = 0.0f;
     bool               haveAmmo_  = false;
+
+    // When anything last arrived, whatever it was. Distinct from per-track
+    // arrival: the link can be alive while one track goes unreported.
+    Clock::time_point lastFrameArrival_{};
+    bool              everReceived_ = false;
 
     std::atomic<bool> ready_{ false };
     std::atomic<bool> started_{ false };

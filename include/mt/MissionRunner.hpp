@@ -26,6 +26,11 @@ public:
                   ITargetSource* targets);
 
     void run();              // thread body
+
+    // True when run() stopped because the target source went silent rather
+    // than because the mission finished. The caller decides what that means;
+    // returning it keeps the exit status honest.
+    bool aborted() const { return aborted_.load(); }
     bool isThreadReady() const { return ready_.load(); }
     void start();            // begin the mission
     void stop();             // external stop request
@@ -64,6 +69,7 @@ private:
     std::atomic<bool> started_{ false };
     std::atomic<bool> running_{ true };
     std::atomic<bool> done_{ false };
+    std::atomic<bool> aborted_{ false };
 
     static constexpr int MAX_STEPS = 200000;
 };

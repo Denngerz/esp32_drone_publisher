@@ -29,6 +29,9 @@ public:
     int    getTargetCount() const override;
     Target getTarget(int index) const override;
 
+    // A local trajectory file cannot go silent.
+    bool healthy() const override { return true; }
+
 private:
     void   advance(float simTime);  // recompute snapshots for a given sim time
     Target sample(int index, float simTime) const;

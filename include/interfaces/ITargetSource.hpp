@@ -23,6 +23,12 @@ public:
     virtual int    getTargetCount() const = 0;
     virtual Target getTarget(int index) const = 0;
 
+    // False once the source can no longer be trusted to describe the present.
+    // A file replayed locally never stops, so it is always true there; a
+    // seeker on a wire can go silent, and a mission that keeps flying at the
+    // last position it heard is chasing a ghost.
+    virtual bool healthy() const = 0;
+
     // --- thread lifecycle ---
     virtual void run() = 0;                  // thread body
     virtual bool isThreadReady() const = 0;  // true once run() is up

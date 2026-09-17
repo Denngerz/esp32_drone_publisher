@@ -113,9 +113,10 @@ void SerialTargetSource::onDetection(const uint8_t* payload, uint8_t len)
         }
     }
 
-    t.pos        = now;
-    t.lastSeenMs = d.t_ms;
-    t.seen       = true;
+    t.pos         = now;
+    t.lastSeenMs  = d.t_ms;
+    t.lastArrival = Clock::now();
+    t.seen        = true;
 }
 
 void SerialTargetSource::onAmmo(const uint8_t* payload, uint8_t len)
@@ -165,6 +166,14 @@ void SerialTargetSource::onStatus(const uint8_t* payload, uint8_t len)
 
 void SerialTargetSource::handleFrame(uint8_t type, const uint8_t* payload, uint8_t len)
 {
+    {
+        // Any valid frame proves the link is alive, even one this source has
+        // no use for.
+        std::lock_guard<std::mutex> lock(mutex_);
+        lastFrameArrival_ = Clock::now();
+        everReceived_     = true;
+    }
+
     switch (type)
     {
         case sensor_link::PKT_TARGET: onDetection(payload, len); break;
@@ -224,9 +233,27 @@ Target SerialTargetSource::getTarget(int index) const
     const Track& t = tracks_[index];
 
     Target out;
-    out.pos      = t.pos;
-    out.velocity = t.velocity;
+    out.pos = t.pos;
+
+    // Hold the last position, but stop pretending to know where it is going.
+    // A stale track carried forward at its old velocity drifts somewhere the
+    // seeker never reported, and the mission would aim at that.
+    const bool stale = !t.seen || (Clock::now() - t.lastArrival) > kTrackStaleAfter;
+    out.velocity = stale ? Coord{ 0.0f, 0.0f } : t.velocity;
+
     return out;
+}
+
+bool SerialTargetSource::healthy() const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    // Before the first frame there is nothing to have lost; waitUntilReady is
+    // what covers a link that never speaks at all.
+    if (!everReceived_)
+        return true;
+
+    return (Clock::now() - lastFrameArrival_) <= kLinkDeadAfter;
 }
 
 void SerialTargetSource::start() { started_.store(true); }
