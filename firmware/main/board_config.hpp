@@ -57,4 +57,23 @@ constexpr int kDetectionHz = 20;
 constexpr int kAmmoRepeatMs   = 1000;
 constexpr int kStatusRepeatMs = 1000;
 
+// --- seeker imperfection ---
+// A seeker that reports every target perfectly on every cycle is not a
+// seeker, and a flight computer written against one is not tested. These two
+// settings are what make the receiver's smoothing and staleness handling
+// earn their place. Set both to zero for a noise-free reference run.
+
+// Standard deviation of the position error on each axis, metres. Small
+// against the store's lethal radius, large against how far a target moves
+// between two reports, which is the regime that makes differencing a
+// position into a velocity hard.
+constexpr float kDetectionNoiseM = 0.25f;
+
+// Probability that a track drops out on a given reporting round, and how
+// long it then stays unreported. The hold is deliberately longer than the
+// receiver's staleness threshold, so a dropout is visible as a lost track
+// rather than smoothed over as jitter.
+constexpr float kTrackDropChance  = 0.01f;
+constexpr int   kTrackDropHoldMs  = 700;
+
 } // namespace board

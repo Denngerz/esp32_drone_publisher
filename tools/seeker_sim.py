@@ -22,6 +22,7 @@ import argparse
 import json
 import os
 import pty
+import random
 import struct
 import sys
 import termios
@@ -93,6 +94,17 @@ def main():
     ap.add_argument("--time-scale", type=float, default=10.0)
     ap.add_argument("--duration", type=float, default=0.0,
                     help="seconds to stream, 0 means until interrupted")
+    # Defaults match firmware/main/board_config.hpp. A seeker that reports
+    # everything perfectly would never exercise the receiver's smoothing or
+    # its staleness handling; pass --noise 0 --drop-chance 0 for a clean run.
+    ap.add_argument("--noise", type=float, default=0.25,
+                    help="position error per axis, metres, standard deviation")
+    ap.add_argument("--drop-chance", type=float, default=0.01,
+                    help="probability a track drops out on a given round")
+    ap.add_argument("--drop-hold", type=float, default=0.7,
+                    help="seconds a dropped track stays unreported")
+    ap.add_argument("--seed", type=int, default=1,
+                    help="fixed so two runs produce the same errors")
     args = ap.parse_args()
 
     with open(args.targets, encoding="utf-8") as f:
@@ -112,6 +124,9 @@ def main():
     tty.setraw(slave, termios.TCSANOW)
 
     print(os.ttyname(slave), flush=True)
+
+    rng = random.Random(args.seed)
+    dropped_until = [0.0] * len(tracks)
 
     period = 1.0 / args.rate
     started = time.monotonic()
@@ -135,7 +150,20 @@ def main():
                 os.write(master, status_frame(len(tracks)))
 
             for i, track in enumerate(tracks):
+                # A dropped track stays silent until its hold expires, which
+                # the receiver sees as a track that stopped being mentioned.
+                if dropped_until[i]:
+                    if elapsed < dropped_until[i]:
+                        continue
+                    dropped_until[i] = 0.0
+                elif args.drop_chance and rng.random() < args.drop_chance:
+                    dropped_until[i] = elapsed + args.drop_hold
+                    continue
+
                 x, y = sample(track, mission_time, args.node_interval)
+                if args.noise:
+                    x += rng.gauss(0.0, args.noise)
+                    y += rng.gauss(0.0, args.noise)
                 os.write(master, target_frame(t_ms, i, x, y))
 
             time.sleep(period)
