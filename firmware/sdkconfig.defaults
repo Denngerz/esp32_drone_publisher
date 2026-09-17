@@ -1,0 +1,11 @@
+# Classic ESP32 (ESP32-D0WD-V3): Xtensa LX6, dual core, 240 MHz.
+CONFIG_IDF_TARGET="esp32"
+
+# 1 kHz tick so the publish cadence can be expressed in whole milliseconds.
+CONFIG_FREERTOS_HZ=1000
+
+# Nothing here throws or downcasts; both cost flash for no benefit.
+CONFIG_COMPILER_CXX_EXCEPTIONS=n
+CONFIG_COMPILER_CXX_RTTI=n
+
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
