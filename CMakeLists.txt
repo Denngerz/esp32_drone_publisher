@@ -22,9 +22,6 @@ add_library(droneBallistics_Thread
     src/TableSolver.cpp
     src/ComponentsFabric.cpp
     src/FileConfigLoader.cpp
-    src/JsonTargetProvider.cpp
-    src/MissionProcessor.cpp
-    src/states/States.cpp
     src/mt/DronePhysics.cpp
     src/mt/ThreadSafeTargetProvider.cpp
     src/mt/SerialTargetSource.cpp
