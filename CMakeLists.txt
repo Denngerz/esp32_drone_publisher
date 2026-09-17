@@ -43,3 +43,10 @@ target_link_libraries(droneBallistics_Thread_mt PRIVATE droneBallistics_Thread)
 add_executable(sensorLinkTest tests/SensorLinkTest.cpp)
 target_include_directories(sensorLinkTest PRIVATE include)
 add_test(NAME sensor_link COMMAND sensorLinkTest)
+
+# The receiving half runs against a pseudo-terminal: a real character device
+# and the real reading thread, with only the far end synthetic. Needs libutil
+# for openpty.
+add_executable(serialTargetSourceTest tests/SerialTargetSourceTest.cpp)
+target_link_libraries(serialTargetSourceTest PRIVATE droneBallistics_Thread util)
+add_test(NAME serial_target_source COMMAND serialTargetSourceTest)
