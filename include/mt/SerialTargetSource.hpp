@@ -1,5 +1,5 @@
 #pragma once
-// SerialTargetSource.hpp — targets and ammunition taken from the ESP32.
+// SerialTargetSource.hpp — targets taken from the ESP32's seeker.
 //
 // Stands in for ThreadSafeTargetProvider. Where that one replays a trajectory
 // file it loaded itself, this one owns no trajectories at all: it holds
@@ -11,6 +11,12 @@
 // differencing successive detections against the seeker's own clock. Using
 // that clock rather than arrival times means a delayed or bunched frame
 // produces a correct velocity anyway.
+//
+// Ammunition may or may not arrive here. With one module publishing
+// everything on a single wire it does, and this class reports it. With the
+// seeker and the payload bay wired as separate modules, the bay has its own
+// link and its own receiver, and this one is told not to wait for a store it
+// will never hear about. See SerialAmmoSource.
 //
 // The reading thread is the only writer; readers take snapshots under the
 // same mutex, so nothing hands out a reference into moving state.
@@ -26,6 +32,7 @@
 #include "../dto/Coord.hpp"
 #include "../dto/Target.hpp"
 #include "../interfaces/ITargetSource.hpp"
+#include "SerialLink.hpp"
 
 class SerialTargetSource : public ITargetSource
 {
@@ -38,13 +45,15 @@ public:
     // manoeuvre.
     static constexpr auto kTrackStaleAfter = std::chrono::milliseconds(500);
 
-    // The bay and the seeker status repeat once a second, so a second of
+    // The seeker status repeats once a second, so a second and a half of
     // total silence means nothing is arriving at all, not merely that one
     // track was dropped.
     static constexpr auto kLinkDeadAfter = std::chrono::milliseconds(1500);
 
-    explicit SerialTargetSource(std::string device, int baud = 115200);
-    ~SerialTargetSource() override;
+    // expectsAmmo is false when the payload bay publishes on a link of its
+    // own: this source then becomes ready on the track count alone.
+    explicit SerialTargetSource(std::string device, int baud = 115200,
+                                bool expectsAmmo = true);
 
     SerialTargetSource(const SerialTargetSource&)            = delete;
     SerialTargetSource& operator=(const SerialTargetSource&) = delete;
@@ -52,13 +61,14 @@ public:
     // Opens the port in raw 8N1. False on failure, with the reason on stderr.
     bool openPort();
 
-    // Blocks until the seeker has reported both how many tracks it holds and
-    // what the bay carries, or until the timeout expires. The mission cannot
-    // start before then: a zero track count reads as "nothing left to do",
-    // and the ballistics need the store's properties.
+    // Blocks until the seeker has reported how many tracks it holds — and,
+    // when this link also carries the bay, what is loaded — or until the
+    // timeout expires. The mission cannot start before then: a zero track
+    // count reads as "nothing left to do".
     bool waitUntilReady(int timeoutMs);
 
-    // What the payload bay reported. Only meaningful after waitUntilReady.
+    // What the payload bay reported. Only meaningful when this link carries
+    // the bay at all; with a separate bay module, ask SerialAmmoSource.
     AmmoParams ammo() const;
     float      hitRadius() const;
 
@@ -103,9 +113,8 @@ private:
         bool     seen       = false;
     };
 
-    std::string device_;
-    int         baud_;
-    int         fd_ = -1;
+    SerialLink link_;
+    bool       expectsAmmo_;
 
     mutable std::mutex mutex_;
     std::vector<Track> tracks_;
@@ -121,5 +130,4 @@ private:
 
     std::atomic<bool> ready_{ false };
     std::atomic<bool> started_{ false };
-    std::atomic<bool> running_{ true };
 };

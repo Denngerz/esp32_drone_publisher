@@ -24,7 +24,10 @@ add_library(droneBallistics_Thread
     src/FileConfigLoader.cpp
     src/mt/DronePhysics.cpp
     src/mt/ThreadSafeTargetProvider.cpp
+    src/mt/ConsoleLog.cpp
+    src/mt/SerialLink.cpp
     src/mt/SerialTargetSource.cpp
+    src/mt/SerialAmmoSource.cpp
     src/mt/DroneStates.cpp
     src/mt/MissionRunner.cpp
 )
@@ -44,9 +47,17 @@ add_executable(sensorLinkTest tests/SensorLinkTest.cpp)
 target_include_directories(sensorLinkTest PRIVATE include)
 add_test(NAME sensor_link COMMAND sensorLinkTest)
 
-# The receiving half runs against a pseudo-terminal: a real character device
-# and the real reading thread, with only the far end synthetic. Needs libutil
-# for openpty.
+# The receiving halves run against a pseudo-terminal: a real character device
+# and the real reading thread, with only the far end synthetic. Both suites
+# share the fake module in tests/FakeSensorModule.hpp and need libutil for
+# openpty. They are separate binaries because the two links are separate
+# modules; a failure should name which one.
 add_executable(serialTargetSourceTest tests/SerialTargetSourceTest.cpp)
+target_include_directories(serialTargetSourceTest PRIVATE tests)
 target_link_libraries(serialTargetSourceTest PRIVATE droneBallistics_Thread util)
 add_test(NAME serial_target_source COMMAND serialTargetSourceTest)
+
+add_executable(serialAmmoSourceTest tests/SerialAmmoSourceTest.cpp)
+target_include_directories(serialAmmoSourceTest PRIVATE tests)
+target_link_libraries(serialAmmoSourceTest PRIVATE droneBallistics_Thread util)
+add_test(NAME serial_ammo_source COMMAND serialAmmoSourceTest)

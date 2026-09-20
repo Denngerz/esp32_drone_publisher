@@ -2,14 +2,19 @@
 // SensorLink.hpp — binary UART protocol between the ESP32 sensor module and
 // the Raspberry Pi flight computer.
 //
-// Roles. The ESP32 is a peripheral that reports what it observes and what it
-// carries; it never receives commands. It publishes:
+// Roles. The ESP32 carries two peripherals that report what they observe and
+// what they carry; neither receives commands. They publish:
 //   * PKT_AMMO   — the payload bay identifying the loaded store, once at
 //                  start and then occasionally, so a late listener catches up;
 //   * PKT_TARGET — one seeker detection, streamed as targets move;
 //   * PKT_STATUS — how many tracks the seeker currently holds.
 // The Pi consumes these in place of reading data/targets.json and the ammo
 // entry out of data/ammo.json.
+//
+// The two modules have a UART each, so PKT_AMMO arrives on one link and the
+// other two on the other. Nothing in the format depends on that: frames are
+// typed and self-delimiting, so the same parser reads either link, and a
+// single module publishing all three on one wire still works.
 //
 // Framing follows the course's drone_link design, which is proven and worth
 // keeping: a self-synchronising frame with a CRC, so a listener that joins

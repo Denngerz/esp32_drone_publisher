@@ -1,7 +1,9 @@
 #include "../../include/mt/MissionRunner.hpp"
+#include "../../include/mt/ConsoleLog.hpp"
 #include <chrono>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <thread>
 
 MissionRunner::MissionRunner(const DroneConfig& cfg,
@@ -68,9 +70,11 @@ void MissionRunner::planAndCommand()
     // Reached the drop point?
     if (length(ctx_.goal - ctx_.position) <= cfg_.hitRadius)
     {
-        std::cout << "Drop on target " << currentIdx_
-                  << " at (" << ctx_.position.x << ", " << ctx_.position.y << ")"
-                  << " t=" << tel.timeSecSinceStart << '\n';
+        std::ostringstream msg;
+        msg << "Drop on target " << currentIdx_
+            << " at (" << ctx_.position.x << ", " << ctx_.position.y << ")"
+            << " t=" << tel.timeSecSinceStart;
+        console::line(msg.str());
         ++currentIdx_;
         if (currentIdx_ >= targets_->getTargetCount())
             done_.store(true);
@@ -95,7 +99,7 @@ void MissionRunner::run()
             // keeps manoeuvring and releasing on stale information.
             if (!targets_->healthy())
             {
-                std::cerr << "Target source went silent, aborting mission\n";
+                console::error("Target source went silent, aborting mission");
                 aborted_.store(true);
                 break;
             }
