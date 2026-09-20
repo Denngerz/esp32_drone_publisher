@@ -15,7 +15,8 @@ idf_component_register(
     SRCS
         "main.cpp"
         "sensor_uart.cpp"
-        "publisher.cpp"
+        "seeker.cpp"
+        "bay.cpp"
     INCLUDE_DIRS
         "."
         "${GENERATED_DIR}"

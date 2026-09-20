@@ -1,4 +1,4 @@
-// SerialTargetSourceTest.cpp — the receiving half of the sensor link.
+// SerialTargetSourceTest.cpp — the receiving half of the seeker's link.
 //
 // SerialTargetSource is the piece that turns a byte stream into something the
 // mission can fly against, and most of what it does cannot be read off the
@@ -7,122 +7,33 @@
 // pinned down here.
 //
 // The link is a pseudo-terminal, so the source opens a real character device
-// and runs its real reading thread. Only the far end is synthetic.
+// and runs its real reading thread. Only the far end is synthetic. See
+// FakeSensorModule.hpp; the bay's receiver has its own suite next door.
 
-#include "link/SensorLink.hpp"
+#include "FakeSensorModule.hpp"
 #include "mt/SerialTargetSource.hpp"
 
-#include <chrono>
-#include <cstdio>
-#include <cstring>
-#include <string>
 #include <thread>
 
-#include <pty.h>
-#include <termios.h>
-#include <unistd.h>
+using testing::check;
+using testing::checkNear;
+using testing::FakeModule;
+using testing::sleepMs;
 
 namespace
 {
 
-int failures = 0;
-
-void check(bool ok, const char* what)
-{
-    if (!ok)
-    {
-        std::printf("FAIL: %s\n", what);
-        ++failures;
-    }
-}
-
-void checkNear(float got, float want, float tol, const char* what)
-{
-    const float diff = got > want ? got - want : want - got;
-    if (diff > tol)
-    {
-        std::printf("FAIL: %s (got %.3f, wanted %.3f +/- %.3f)\n", what, got, want, tol);
-        ++failures;
-    }
-}
-
-void sleepMs(int ms)
-{
-    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-}
-
-// One end of a pseudo-terminal pair, standing in for the ESP32.
-class FakeSeeker
-{
-public:
-    bool open()
-    {
-        if (::openpty(&master_, &slave_, nullptr, nullptr, nullptr) != 0)
-            return false;
-
-        // Raw mode: the line discipline would otherwise rewrite bytes that
-        // happen to look like control characters and corrupt binary frames.
-        termios tio{};
-        ::tcgetattr(slave_, &tio);
-        ::cfmakeraw(&tio);
-        ::tcsetattr(slave_, TCSANOW, &tio);
-
-        path_ = ::ttyname(slave_);
-        return !path_.empty();
-    }
-
-    void close()
-    {
-        if (master_ >= 0) { ::close(master_); master_ = -1; }
-        if (slave_  >= 0) { ::close(slave_);  slave_  = -1; }
-    }
-
-    const std::string& path() const { return path_; }
-
-    void sendAmmo(const char* name, float mass, float drag, float lift, float hitR)
-    {
-        sensor_link::AmmoReport a{};
-        std::memcpy(a.name, name, std::strlen(name) < sizeof a.name
-                                      ? std::strlen(name) : sizeof a.name);
-        a.mass = mass; a.drag = drag; a.lift = lift; a.hitRadius = hitR;
-        send(sensor_link::PKT_AMMO, &a, sizeof a);
-    }
-
-    void sendStatus(uint8_t trackCount)
-    {
-        sensor_link::SeekerStatus s{ trackCount };
-        send(sensor_link::PKT_STATUS, &s, sizeof s);
-    }
-
-    void sendDetection(uint32_t tMs, uint8_t id, float x, float y)
-    {
-        sensor_link::TargetDetection d{ tMs, id, x, y };
-        send(sensor_link::PKT_TARGET, &d, sizeof d);
-    }
-
-private:
-    void send(uint8_t type, const void* payload, uint8_t len)
-    {
-        uint8_t frame[280];
-        const size_t n = sensor_link::encode(type, payload, len, frame);
-        const ssize_t written = ::write(master_, frame, n);
-        (void)written;
-    }
-
-    int         master_ = -1;
-    int         slave_  = -1;
-    std::string path_;
-};
-
 // Brings up a seeker and a source already reading from it.
 struct Rig
 {
-    FakeSeeker         seeker;
     SerialTargetSource source;
     std::thread        thread;
     bool               ok = false;
 
-    explicit Rig(FakeSeeker& s) : source(s.path()) {}
+    // expectsAmmo mirrors the flag main passes: false when the payload bay is
+    // a module of its own and this link carries no store report.
+    explicit Rig(FakeModule& module, bool expectsAmmo = true)
+        : source(module.path(), 115200, expectsAmmo) {}
 
     void start()
     {
@@ -144,7 +55,7 @@ struct Rig
 // that handshake is the first thing worth proving.
 void testLearnsAmmoAndTrackCount()
 {
-    FakeSeeker seeker;
+    FakeModule seeker;
     if (!seeker.open()) { check(false, "could not open a pseudo-terminal"); return; }
 
     Rig rig(seeker);
@@ -165,11 +76,32 @@ void testLearnsAmmoAndTrackCount()
     seeker.close();
 }
 
+// With the bay wired as its own module, no store report will ever arrive on
+// this link. Waiting for one would hang the mission before it started, so the
+// track count alone has to be enough.
+void testReadyWithoutAmmoWhenBayIsSeparate()
+{
+    FakeModule seeker;
+    if (!seeker.open()) { check(false, "could not open a pseudo-terminal"); return; }
+
+    Rig rig(seeker, /*expectsAmmo=*/false);
+    rig.start();
+    if (!rig.ok) { check(false, "source could not open the pty"); seeker.close(); return; }
+
+    seeker.sendStatus(3);
+
+    check(rig.source.waitUntilReady(2000),
+          "should be ready on the track count alone when the bay is separate");
+    check(rig.source.getTargetCount() == 3, "track count was not learned");
+
+    seeker.close();
+}
+
 // The seeker reports position only. A velocity the mission can lead with has
 // to be inferred from two detections against the seeker's own clock.
 void testEstimatesVelocityFromTwoDetections()
 {
-    FakeSeeker seeker;
+    FakeModule seeker;
     if (!seeker.open()) { check(false, "could not open a pseudo-terminal"); return; }
 
     Rig rig(seeker);
@@ -202,7 +134,7 @@ void testEstimatesVelocityFromTwoDetections()
 // seeker never reported.
 void testStaleTrackLosesItsVelocity()
 {
-    FakeSeeker seeker;
+    FakeModule seeker;
     if (!seeker.open()) { check(false, "could not open a pseudo-terminal"); return; }
 
     Rig rig(seeker);
@@ -236,7 +168,7 @@ void testStaleTrackLosesItsVelocity()
 // needs to be told about it.
 void testLinkGoesUnhealthyOnSilence()
 {
-    FakeSeeker seeker;
+    FakeModule seeker;
     if (!seeker.open()) { check(false, "could not open a pseudo-terminal"); return; }
 
     Rig rig(seeker);
@@ -260,14 +192,10 @@ void testLinkGoesUnhealthyOnSilence()
 int main()
 {
     testLearnsAmmoAndTrackCount();
+    testReadyWithoutAmmoWhenBayIsSeparate();
     testEstimatesVelocityFromTwoDetections();
     testStaleTrackLosesItsVelocity();
     testLinkGoesUnhealthyOnSilence();
 
-    if (failures == 0)
-        std::printf("all serial source checks passed\n");
-    else
-        std::printf("%d check(s) failed\n", failures);
-
-    return failures == 0 ? 0 : 1;
+    return testing::report("serial source");
 }

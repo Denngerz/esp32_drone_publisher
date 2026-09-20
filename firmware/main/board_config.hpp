@@ -1,20 +1,41 @@
 #pragma once
-// board_config.hpp — the sensor module's hardware and mission settings.
+// board_config.hpp — the sensor modules' hardware and mission settings.
 //
-// Wiring, ESP32 side -> Raspberry Pi side:
+// This board carries two independent modules: the seeker and the payload bay.
+// On an airframe they are separate boxes on separate wires, so they are
+// separate UARTs here, each with its own task, rather than two roles sharing
+// one port. Nothing is shared between them but the chip they happen to run on.
 //
-//   UART2 TX  GPIO17  ->  Pi RXD  (GPIO15, header pin 10)
-//   UART2 RX  GPIO16  <-  Pi TXD  (GPIO14, header pin  8)
-//   GND               <-> GND     (header pin 6, required for a common
-//                                  reference; without it the link is flaky)
+// Wiring, ESP32 side -> Raspberry Pi 5 side:
 //
-// The link is one-way in practice: this board only transmits. RX is wired and
-// configured anyway so the same harness supports a future command channel
+//   seeker  UART2 TX  GPIO17  ->  Pi GPIO15  RXD0  (header pin 10)
+//   seeker  UART2 RX  GPIO16  <-  Pi GPIO14  TXD0  (header pin  8)
+//   bay     UART1 TX  GPIO18  ->  Pi GPIO5   RXD2  (header pin 29)
+//   bay     UART1 RX  GPIO19  <-  Pi GPIO4   TXD2  (header pin  7)
+//   GND                       <-> GND                (header pin 6, required
+//                                  for a common reference; without it the
+//                                  links are flaky)
+//
+// One ground is enough for both links; they share the chip's reference.
+//
+// The links are one-way in practice: this board only transmits. RX is wired
+// and configured anyway so the same harness supports a future command channel
 // without re-cabling.
 //
-// UART2 rather than UART0: UART0 goes to the CP2102 bridge that appears as
-// /dev/ttyUSB0, and ESP-IDF logs to it. Sharing that port would interleave
-// console text with binary frames and corrupt them.
+// UART1 and UART2 rather than UART0: UART0 goes to the CP2102 bridge that
+// appears as /dev/ttyUSB0, and ESP-IDF logs to it. Sharing that port would
+// interleave console text with binary frames and corrupt them.
+//
+// UART1's reset-default pins are GPIO9/GPIO10, which are wired to the SPI
+// flash on WROOM modules — driving them does not merely conflict, it stops
+// the part booting. The pins below are routed through the GPIO matrix
+// instead, which is what uart_set_pin does, so any free pin works. GPIO6-11
+// are flash, GPIO34-39 are input-only and cannot be a TX, and GPIO0/2/12/15
+// are sampled at reset; the rest are fair game.
+//
+// On the Pi 5 side the second port needs `dtoverlay=uart2-pi5` in
+// /boot/firmware/config.txt; it then appears as /dev/ttyAMA2, while the
+// GPIO14/15 UART is /dev/ttyAMA0.
 
 #include <driver/gpio.h>
 #include <driver/uart.h>
@@ -22,12 +43,18 @@
 namespace board
 {
 
-// --- sensor link ---
-constexpr uart_port_t kLinkUart  = UART_NUM_2;
-constexpr gpio_num_t  kLinkTxPin = GPIO_NUM_17;
-constexpr gpio_num_t  kLinkRxPin = GPIO_NUM_16;
-constexpr int         kLinkBaud  = 115200;
-constexpr int         kLinkBufSz = 2048;
+// --- links ---
+// Both run at the same speed and buffer size; only the port and pins differ.
+constexpr int kLinkBaud  = 115200;
+constexpr int kLinkBufSz = 2048;
+
+constexpr uart_port_t kSeekerUart  = UART_NUM_2;
+constexpr gpio_num_t  kSeekerTxPin = GPIO_NUM_17;
+constexpr gpio_num_t  kSeekerRxPin = GPIO_NUM_16;
+
+constexpr uart_port_t kBayUart  = UART_NUM_1;
+constexpr gpio_num_t  kBayTxPin = GPIO_NUM_18;
+constexpr gpio_num_t  kBayRxPin = GPIO_NUM_19;
 
 // --- payload bay ---
 // What is physically loaded. The bay reports this and its ballistic

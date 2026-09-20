@@ -12,6 +12,14 @@ It prints the device path to stdout, then streams until interrupted:
     /dev/pts/4
     $ ./build/droneBallistics_Thread_mt --seeker /dev/pts/4
 
+With --split it stands in for two modules on two links, the way the board
+wires them, and prints the seeker's path first and the bay's second:
+
+    $ python3 tools/seeker_sim.py --split
+    /dev/pts/4
+    /dev/pts/5
+    $ ./build/droneBallistics_Thread_mt --seeker /dev/pts/4 --bay /dev/pts/5
+
 The framing here is written independently of the C++ in
 include/link/SensorLink.hpp. That is deliberate: if the two disagree about
 the CRC or the layout, nothing decodes, which is a far louder failure than a
@@ -81,6 +89,15 @@ def sample(track, mission_time_s, node_interval_s):
             a["y"] + (b["y"] - a["y"]) * frac)
 
 
+def open_link():
+    """A raw pseudo-terminal pair standing in for one module's UART."""
+    master, slave = pty.openpty()
+    # Raw mode: the line discipline would otherwise rewrite bytes that happen
+    # to look like newlines or control characters, corrupting binary frames.
+    tty.setraw(slave, termios.TCSANOW)
+    return master, slave, os.ttyname(slave)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -105,6 +122,8 @@ def main():
                     help="seconds a dropped track stays unreported")
     ap.add_argument("--seed", type=int, default=1,
                     help="fixed so two runs produce the same errors")
+    ap.add_argument("--split", action="store_true",
+                    help="publish the bay on a second link, as the board does")
     args = ap.parse_args()
 
     with open(args.targets, encoding="utf-8") as f:
@@ -118,12 +137,17 @@ def main():
 
     tracks = [t["positions"] for t in targets["targets"]]
 
-    master, slave = pty.openpty()
-    # Raw mode: the line discipline would otherwise rewrite bytes that happen
-    # to look like newlines or control characters, corrupting binary frames.
-    tty.setraw(slave, termios.TCSANOW)
+    # One link, or two when the bay is a module of its own. Sharing the pair
+    # when not splitting keeps the single-link case byte-for-byte what it was.
+    seeker_master, seeker_slave, seeker_path = open_link()
+    if args.split:
+        bay_master, bay_slave, bay_path = open_link()
+    else:
+        bay_master, bay_slave, bay_path = seeker_master, seeker_slave, seeker_path
 
-    print(os.ttyname(slave), flush=True)
+    print(seeker_path, flush=True)
+    if args.split:
+        print(bay_path, flush=True)
 
     rng = random.Random(args.seed)
     dropped_until = [0.0] * len(tracks)
@@ -146,8 +170,8 @@ def main():
             # late still learns them, matching the firmware.
             if elapsed - last_slow >= 1.0 or last_slow == 0.0:
                 last_slow = elapsed
-                os.write(master, ammo_frame(store, args.hit_radius))
-                os.write(master, status_frame(len(tracks)))
+                os.write(bay_master, ammo_frame(store, args.hit_radius))
+                os.write(seeker_master, status_frame(len(tracks)))
 
             for i, track in enumerate(tracks):
                 # A dropped track stays silent until its hold expires, which
@@ -164,14 +188,17 @@ def main():
                 if args.noise:
                     x += rng.gauss(0.0, args.noise)
                     y += rng.gauss(0.0, args.noise)
-                os.write(master, target_frame(t_ms, i, x, y))
+                os.write(seeker_master, target_frame(t_ms, i, x, y))
 
             time.sleep(period)
     except KeyboardInterrupt:
         pass
     finally:
-        os.close(master)
-        os.close(slave)
+        os.close(seeker_master)
+        os.close(seeker_slave)
+        if args.split:
+            os.close(bay_master)
+            os.close(bay_slave)
 
 
 if __name__ == "__main__":

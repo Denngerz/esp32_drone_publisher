@@ -39,6 +39,8 @@ simulation.json
 *.swp
 .cache/
 
+CLAUDE.md
+
 # ESP-IDF firmware build artifacts
 firmware/build/
 firmware/sdkconfig

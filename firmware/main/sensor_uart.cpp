@@ -3,7 +3,6 @@
 
 #include "link/SensorLink.hpp"
 
-#include <driver/uart.h>
 #include <esp_log.h>
 
 namespace sensor_uart
@@ -24,36 +23,39 @@ bool Uart::begin()
     cfg.flow_ctrl  = UART_HW_FLOWCTRL_DISABLE;
     cfg.source_clk = UART_SCLK_DEFAULT;
 
-    esp_err_t err = uart_driver_install(board::kLinkUart,
+    esp_err_t err = uart_driver_install(port_,
                                         board::kLinkBufSz,
                                         board::kLinkBufSz,
                                         0, nullptr, 0);
     if (err != ESP_OK)
     {
-        ESP_LOGE(kTag, "uart_driver_install failed: %s", esp_err_to_name(err));
+        ESP_LOGE(kTag, "%s: uart_driver_install failed: %s",
+                 label_, esp_err_to_name(err));
         return false;
     }
 
-    err = uart_param_config(board::kLinkUart, &cfg);
+    err = uart_param_config(port_, &cfg);
     if (err != ESP_OK)
     {
-        ESP_LOGE(kTag, "uart_param_config failed: %s", esp_err_to_name(err));
+        ESP_LOGE(kTag, "%s: uart_param_config failed: %s",
+                 label_, esp_err_to_name(err));
         return false;
     }
 
-    err = uart_set_pin(board::kLinkUart,
-                       board::kLinkTxPin, board::kLinkRxPin,
+    // Routing through the GPIO matrix is what makes the pin choice free. It
+    // matters most for UART1, whose reset-default pins are the SPI flash.
+    err = uart_set_pin(port_, txPin_, rxPin_,
                        UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
     if (err != ESP_OK)
     {
-        ESP_LOGE(kTag, "uart_set_pin failed: %s", esp_err_to_name(err));
+        ESP_LOGE(kTag, "%s: uart_set_pin failed: %s",
+                 label_, esp_err_to_name(err));
         return false;
     }
 
     ready_ = true;
-    ESP_LOGI(kTag, "UART%d up: tx=%d rx=%d @ %d baud",
-             board::kLinkUart, board::kLinkTxPin, board::kLinkRxPin,
-             board::kLinkBaud);
+    ESP_LOGI(kTag, "%s link up: UART%d tx=%d rx=%d @ %d baud",
+             label_, port_, txPin_, rxPin_, board::kLinkBaud);
     return true;
 }
 
@@ -68,7 +70,7 @@ void Uart::send(uint8_t type, const void* payload, uint8_t payloadLen)
     // peer stopped draining; the driver's buffer absorbs normal bursts and a
     // full buffer means the link is gone, which dropping a frame reports
     // honestly enough.
-    uart_write_bytes(board::kLinkUart, reinterpret_cast<const char*>(frame), n);
+    uart_write_bytes(port_, reinterpret_cast<const char*>(frame), n);
 }
 
 } // namespace sensor_uart

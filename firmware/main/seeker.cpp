@@ -1,32 +1,24 @@
-#include "publisher.hpp"
+#include "seeker.hpp"
 #include "board_config.hpp"
+#include "cadence.hpp"
 #include "sensor_uart.hpp"
 
 #include "link/SensorLink.hpp"
 
 #include <cmath>
-#include <cstring>
 
-namespace publisher
+namespace seeker
 {
 
 namespace
 {
 // Wall-clock milliseconds between two rounds of detections.
 constexpr uint32_t kDetectionPeriodMs = 1000 / board::kDetectionHz;
-
-// True when `now` has reached `deadline`, written so a 32-bit millisecond
-// counter wrapping after about 49 days cannot leave a deadline permanently in
-// the future.
-bool due(uint32_t now, uint32_t last, uint32_t period)
-{
-    return static_cast<uint32_t>(now - last) >= period;
-}
 } // namespace
 
 // xorshift32: a handful of instructions, no library, and reproducible across
 // runs and builds. Nothing here needs cryptographic quality, only a spread.
-float Publisher::nextUniform()
+float Seeker::nextUniform()
 {
     rngState_ ^= rngState_ << 13;
     rngState_ ^= rngState_ >> 17;
@@ -37,7 +29,7 @@ float Publisher::nextUniform()
 // Box-Muller. Both halves of the pair would be usable, but discarding one
 // keeps the call site simple and the cost is irrelevant at a hundred samples
 // a second.
-float Publisher::nextNormal()
+float Seeker::nextNormal()
 {
     // Guard the log against a zero draw, which xorshift32 can produce.
     const float u1 = nextUniform() + 1e-7f;
@@ -45,8 +37,8 @@ float Publisher::nextNormal()
     return std::sqrt(-2.0f * std::log(u1)) * std::cos(2.0f * 3.14159265f * u2);
 }
 
-void Publisher::sampleTrack(int index, float missionTimeS,
-                            float& x, float& y) const
+void Seeker::sampleTrack(int index, float missionTimeS,
+                         float& x, float& y) const
 {
     const auto& track = mission_data::kTracks[index];
     constexpr int n = mission_data::kNodeCount;
@@ -64,7 +56,7 @@ void Publisher::sampleTrack(int index, float missionTimeS,
     y = track[idx].y + (track[next].y - track[idx].y) * frac;
 }
 
-void Publisher::publishDetections(uint32_t nowMs)
+void Seeker::publishDetections(uint32_t nowMs)
 {
     // Mission time runs faster than wall time by the configured scale, which
     // is what makes a mission sampled at ten-second intervals watchable.
@@ -109,27 +101,7 @@ void Publisher::publishDetections(uint32_t nowMs)
     }
 }
 
-void Publisher::publishAmmo()
-{
-    sensor_link::AmmoReport a{};
-
-    // The catalogue name may be shorter or longer than the wire field. Copy
-    // what fits and leave the rest zeroed; the field is documented as not
-    // necessarily NUL-terminated, so a name of exactly 16 characters is fine
-    // and must not be truncated to make room for a terminator.
-    const size_t nameLen = std::strlen(loaded_.name);
-    std::memcpy(a.name, loaded_.name,
-                nameLen < sizeof a.name ? nameLen : sizeof a.name);
-
-    a.mass      = loaded_.mass;
-    a.drag      = loaded_.drag;
-    a.lift      = loaded_.lift;
-    a.hitRadius = board::kStoreHitRadiusM;
-
-    uart_.send(sensor_link::PKT_AMMO, &a, sizeof a);
-}
-
-void Publisher::publishStatus()
+void Seeker::publishStatus()
 {
     sensor_link::SeekerStatus s{};
     s.trackCount = static_cast<uint8_t>(mission_data::kTrackCount);
@@ -137,37 +109,30 @@ void Publisher::publishStatus()
     uart_.send(sensor_link::PKT_STATUS, &s, sizeof s);
 }
 
-void Publisher::tick(uint32_t nowMs)
+void Seeker::tick(uint32_t nowMs)
 {
     // On the first tick everything is due at once, so the receiver learns the
-    // store and the track count before the first detections reach it.
+    // track count before the first detections reach it.
     if (!started_)
     {
         started_ = true;
-        publishAmmo();
         publishStatus();
         publishDetections(nowMs);
-        lastAmmoMs_ = lastStatusMs_ = lastDetectionMs_ = nowMs;
+        lastStatusMs_ = lastDetectionMs_ = nowMs;
         return;
     }
 
-    if (due(nowMs, lastDetectionMs_, kDetectionPeriodMs))
+    if (cadence::due(nowMs, lastDetectionMs_, kDetectionPeriodMs))
     {
         lastDetectionMs_ = nowMs;
         publishDetections(nowMs);
     }
 
-    if (due(nowMs, lastAmmoMs_, board::kAmmoRepeatMs))
-    {
-        lastAmmoMs_ = nowMs;
-        publishAmmo();
-    }
-
-    if (due(nowMs, lastStatusMs_, board::kStatusRepeatMs))
+    if (cadence::due(nowMs, lastStatusMs_, board::kStatusRepeatMs))
     {
         lastStatusMs_ = nowMs;
         publishStatus();
     }
 }
 
-} // namespace publisher
+} // namespace seeker
